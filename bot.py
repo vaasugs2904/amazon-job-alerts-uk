@@ -1,39 +1,68 @@
 import os
-import requests
 import time
-from datetime import datetime
+import requests
 
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-AREAS = ["Luton", "Dunstable", "Hatfield"]
+if not TOKEN:
+    raise RuntimeError("Telegram bot token is missing")
 
-KEYWORDS = [
-    "Amazon warehouse",
-    "Amazon warehouse operative",
-    "Amazon sortation",
-    "Amazon fulfilment centre"
-]
+API = f"https://api.telegram.org/bot{TOKEN}"
 
-def send_alert(message):
-    if not TELEGRAM_TOKEN or not CHAT_ID:
-        print("Set Telegram bot token and chat ID first.")
-        return
-
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+def send_message(chat_id, text):
     requests.post(
-        url,
-        data={"chat_id": CHAT_ID, "text": message},
+        f"{API}/sendMessage",
+        json={"chat_id": chat_id, "text": text},
         timeout=20
-    )
+    ).raise_for_status()
 
 def main():
-    send_alert(
-        "Amazon Job Alert bot started!\n"
-        "Areas: Luton, Dunstable, Hatfield\n"
-        "Job links: https://www.amazon.jobs/en/"
-    )
-    print("Bot started:", datetime.now())
+    offset = None
+    print("Amazon Jobs Telegram bot is running")
 
-if _name_ == "_main_":
+    while True:
+        try:
+            response = requests.get(
+                f"{API}/getUpdates",
+                params={"offset": offset, "timeout": 25},
+                timeout=35
+            )
+            response.raise_for_status()
+
+            for update in response.json().get("result", []):
+                offset = update["update_id"] + 1
+                message = update.get("message", {})
+                chat_id = message.get("chat", {}).get("id")
+                command = message.get("text", "").strip().lower()
+
+                if not chat_id:
+                    continue
+
+                if command in ("/start", "/help"):
+                    send_message(
+                        chat_id,
+                        "Welcome to Amazon UK Job Alerts!\n\n"
+                        "Send jobs to get Amazon job links.\n"
+                        "Areas: Luton, Dunstable and Hatfield."
+                    )
+                elif command == "jobs" or command == "/jobs":
+                    send_message(
+                        chat_id,
+                        "Amazon Jobs UK:\n"
+                        "https://www.amazon.jobs/en/\n\n"
+                        "Search warehouse roles near Luton, "
+                        "Dunstable and Hatfield."
+                    )
+                else:
+                    send_message(
+                        chat_id,
+                        "Mowa! Send /start or type jobs "
+                        "to get Amazon job links."
+                    )
+
+        except Exception as error:
+            print("Error:", error)
+            time.sleep(5)
+
+if __name__ == "__main__":
     main()
